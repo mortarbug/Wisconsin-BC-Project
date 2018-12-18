@@ -15,6 +15,7 @@ wbc <- scale(wbc, center = TRUE, scale = TRUE)
 # Following this: http://research.stowers.org/mcm/efg/R/Visualization/cor-cluster/index.htm
 # Get the correlation matrix and turn it into a dissimilarity matrix 
 wbc_var_dist <- as.dist(cor(wbc))
+wbc_var_dist <- abs(wbc_var_dist)
 
 # Call the hierarchical clustering algorithm and plot 
 plot(hclust(wbc_var_dist))
