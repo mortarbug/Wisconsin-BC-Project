@@ -1,0 +1,164 @@
+---
+title: "Initial Exploration RMD"
+author: "Patrick Vo"
+date: "12/4/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r Import}
+library(ggplot2)
+library(caret)
+library(randomForest)
+library(reshape2)
+
+# For finding variance inflation factor
+library(usdm)
+
+```
+
+
+Begin by loading in the data:
+```{r}
+# Read in the data
+wbc <- read.csv('wisc_bc_data.csv')
+
+# Print out some information about the data
+str(wbc)
+```
+
+I'll note that the data has an ID column, and that the target diagnosis variable is stored as a factor with 2 levels: "B" for Benign and "M" for Malignant. The rest of the data is numeric measurements of the cancer cells.
+
+Notice also that the data consists of multiple measurements for a single characteristic. For example, the characteristic "perimeter" is described by 3 values--"perimeter_mean", "perimeter_se", and "perimeter_worst." Some of these features may prove redundant.
+
+We'll next check for the 5-number summaries and try to get a sense of any missing data in the set. 
+
+```{r}
+# Find summary of the predictor variables
+summary(wbc[,3:32])
+```
+
+There don't seem to be any missing values in the dataset--understandable, because this is a curated dataset that was originally published in a scientific journal. 
+
+Looking at the 5-number summaries, we can see that the different variables take on wildly different ranges of values. For the most part, larger values of the mean of a certain characteristic correlate with larger values of the standard error. 
+
+We'll likely need to center and scale this data later, especially if we decide to fit models or carry out other procedures that are sensitive to disparate ranges. 
+
+Now, I want to get a sense of what variables might be playing a major role in predicting whether a tumor is malignant or benign.
+
+I'll fit a random forest model with default parameters to the data, then view the variable importance plot. I'll have to do a train/test/split first, to ensure that any conclusions that we draw won't lead to overfitting of the data.
+
+```{r TrainTestSplit}
+# Set seed
+set.seed(1)
+
+# Create the partition for the train/test/split. Remove the ID column
+intrain <- createDataPartition(y = wbc$diagnosis, p= 0.7, list = FALSE)
+train <- wbc[intrain, -1]
+test <- wbc[-intrain, -1]
+
+```
+
+```{r Random Forest Fitting}
+# Fit the random forest model
+explor_rf_fit <- randomForest(diagnosis ~. ,data = train)
+
+# Variable importance plot
+varImpPlot(explor_rf_fit)
+```
+
+Looking at the MeanDecreaseGini coefficient, we can see that there appears to be an elbow that occurs 11 variables down, corresponding to concavity_worst. Beyond this, adding additional features does not seem to provide too much help to the model. 
+
+I  want to get an idea of the correlative structures in the data. We'll be examining the data with more sophisticated algorithms later, but I want to see a correlation heat map first. In particular, I'm interested in comparing the first 11 variables of the varImpPlot.
+
+
+```{r Correlation Heatmap}
+# Create a correlation matrix from the data. Take only the upper
+#     triangule
+wbc_top_imp <- subset(wbc, select = c(radius_worst, 
+                                      perimeter_worst, 
+                                      area_worst,
+                                      concave.points_worst,
+                                      concave.points_mean,
+                                      concavity_mean,
+                                      perimeter_mean,
+                                      area_mean,
+                                      radius_mean,
+                                      area_se,
+                                      concavity_worst))
+
+wbc_cor <-cor(wbc_top_imp, method = "spearman")
+#wbc_cor <- wbc_cor[upper.tri(wbc_cor)]
+
+# Melt the correlation matrix to prepare for plotting
+melted_wbc_cor <- melt(wbc_cor)
+
+# Draw a heatmap with ggplot2
+ggplot(data = melted_wbc_cor, aes(x = Var1, y = Var2, fill = value)) + 
+  geom_tile() +
+ scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+   midpoint = 0, limit = c(-1,1), space = "Lab", 
+   name="Spearman Correlation") +
+  theme_minimal()+ 
+ theme(axis.text.x = element_text(angle = 90, vjust = 1, 
+    size = 12, hjust = 1))+
+ coord_fixed()
+
+```
+
+That's quite a plot. It seems that these variables are all positively correlated. A deeper inspection reveals that this makes sense--the values being examined here are area, perimeter, and radius, which should all be correlated when measured on a roughly circular cell nucleus.  
+
+We will likely also run into the issue of multicollinearity, where some of the variables are linear combinations of the others. When fitting our models later on, we'll want to either have some kind of subset of the data, or we'll want to stick to models that are more robust towards collinearity. We might also want to use a dimensionality reduction method such as principal components analysis, which help mitigate the effects of the values[1].
+
+We know that cancer cell nuclei tend towards being abnormally large, and are possibly multinucleated [2]. We can see that some values that have to do with shape and size do indeed show up in the variable importance plot. 
+
+Let's plot two "worst" values of size and shape to see how "B" and "M" occur across the points.
+```{r}
+# Plot 2 points, colored by diagnosis
+ggplot(aes(x = concave.points_worst, y = area_worst), data = wbc) +
+  geom_point(aes(col = diagnosis)) + 
+  labs(title = 'Worst(Area) vs Worst(Concave Points)')
+
+```
+
+
+[1] https://stats.stackexchange.com/questions/9542/is-pca-unstable-under-multicollinearity
+[2]http://clincancerres.aacrjournals.org/content/5/11/3542
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
